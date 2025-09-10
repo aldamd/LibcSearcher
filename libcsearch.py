@@ -35,6 +35,10 @@ class LibcSearch:
             return "\n".join(lines)
 
     def __init__(self, sym: list[str], addr: list[str]) -> None:
+        for idx, s in enumerate(sym):
+            if s in self._aliases:
+                sym[idx] = self._aliases[s]
+
         addr = [i.lstrip("0x") for i in addr]
 
         self._sym = sym
@@ -44,11 +48,10 @@ class LibcSearch:
         self._url: str = ""
 
         self._check_libc_db()
-        self._blukat_search()
 
     def _check_libc_db(self) -> None:
         for url in ["https://libc.blukat.me/", "https://libc.rip/"]:
-            r = requests.head(url, timeout=1)
+            r = requests.head(url, timeout=2)
             if r.status_code == 200:
                 self._url = url
                 logger.info(f"{url} selected")
@@ -58,7 +61,6 @@ class LibcSearch:
         )
 
     def _blukat_search(self) -> None:
-        # symbol_search = r"(?:abort|abs) [0-9a-f]+"
         query = "?q="
         params = []
         for s, a in zip(self._sym, self._addr):
@@ -66,8 +68,47 @@ class LibcSearch:
         query += ",".join(params)
         r = requests.get(self._url + query)
 
-        libc_matches = re.findall(r"(?:musl|[g]?libc[0-9]?)_?.*\..*-.*", r.text)
-        print(libc_matches)
+        matches = re.findall(r"(?:musl|[g]?libc[0-9]?)_?.*\..*-.*", r.text)
+        total = len(matches)
+        done = 0
+        lock = Lock()
+
+        def search_symbols(libc: str) -> tuple[str, dict[str, int]]:
+            query = f"d/{libc}.symbols"
+            r = requests.get(self._url + query)
+            if r.status_code != 200:
+                raise RuntimeError(f"Failed to reach {self._url + query}")
+            symbols = r.text
+
+            offset_map = {}
+            for s in self._sym:
+                pattern = rf"(?:{s} [0-9a-f]+)"
+                match = re.search(pattern, symbols)
+                if not match:
+                    raise RuntimeError(f"Failed to find {s} in the {libc} symbol table")
+                offset_map[s] = int(match.group().split()[-1], 16)
+
+            return libc, offset_map
+
+        libc_map = {}
+        with ThreadPoolExecutor(max_workers=10) as tp:
+            futures = [tp.submit(search_symbols, libc) for libc in matches]
+            for future in as_completed(futures):
+                libc, offsets = future.result()
+                libc_map[libc] = offsets
+
+                with lock:
+                    done += 1
+                    logging.info(
+                        "Scraped %s (%d/%d, %.1f%%)",
+                        libc,
+                        done,
+                        total,
+                        (done / total) * 100,
+                    )
+
+        print(libc_map)
+        self._libc_map = libc_map
 
 
 if __name__ == "__main__":
