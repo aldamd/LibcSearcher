@@ -34,6 +34,9 @@ class LibcSearch:
                 lines.append(f"    {sym:12} 0x{val:x}")
             return "\n".join(lines)
 
+        def __repr__(self):
+            return f"<Libc {self.name}>"
+
     def __init__(self, sym: list[str], addr: list[str]) -> None:
         for idx, s in enumerate(sym):
             if s in self._aliases:
@@ -48,9 +51,7 @@ class LibcSearch:
         self._url: str = ""
 
         self._check_libc_db()
-
-        self._url = "https://libc.rip/"
-        self._rip_search()
+        self._search()
 
     def _check_libc_db(self) -> None:
         for url in ["https://libc.blukat.me/", "https://libc.rip/"]:
@@ -162,8 +163,28 @@ class LibcSearch:
                         (done / total) * 100,
                     )
 
-        print(libc_map)
         self._libc_map = libc_map
+
+    def _search(self) -> None:
+        if self._url == "https://libc.blukat.me/":
+            self._blukat_search()
+        elif self._url == "https://libc.rip/":
+            self._rip_search()
+
+        filtered_map = {}
+        seen = set()
+        for libc, offsets in self._libc_map.items():
+            id_tuple = (libc, tuple(offsets.items()))
+            if id_tuple in seen:
+                continue
+            seen.add(id_tuple)
+            filtered_map[libc] = offsets
+            self.libc_list.append(self._Libc(libc, offsets))
+
+        self._libc_map = filtered_map
+
+    def __str__(self) -> str:
+        return f"<LibcSearch {tuple(zip(self._sym, self._addr))}>"
 
 
 if __name__ == "__main__":
@@ -173,3 +194,7 @@ if __name__ == "__main__":
     sym = ["puts", "binsh", "gets"]
     addr = ["0x7f10101010"]
     libcsrch = LibcSearch(sym, addr)
+    print(libcsrch)
+    print(libcsrch.libc_list)
+    for libc in libcsrch.libc_list:
+        print(libc)
