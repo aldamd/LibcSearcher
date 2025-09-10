@@ -183,6 +183,48 @@ class LibcSearch:
 
         self._libc_map = filtered_map
 
+    def download(self) -> list[str]:
+        if self._url == "https://libc.blukat.me/":
+            query = "/d/"
+        elif self._url == "https://libc.rip/":
+            query = "/download/"
+        else:
+            raise RuntimeError(f"Url {self._url} not yet initialized!")
+
+        total = len(self._libc_map)
+        done = 0
+        lock = Lock()
+
+        def download(libc: str) -> str:
+            libc = f"{libc}.so"
+            if glob(f"*{libc}"):
+                return libc
+            r = requests.get(self._url + query + libc)
+            bin = r.content
+            with open(libc, "wb") as f:
+                f.write(bin)
+
+            return libc
+
+        libcs = []
+        with ThreadPoolExecutor(max_workers=10) as tp:
+            futures = [tp.submit(download, libc) for libc in self._libc_map]
+            for future in as_completed(futures):
+                libc = future.result()
+                libcs.append(libc)
+
+                with lock:
+                    done += 1
+                    logging.info(
+                        "Downloaded %s (%d/%d, %.1f%%)",
+                        libc,
+                        done,
+                        total,
+                        (done / total) * 100,
+                    )
+
+        return libcs
+
     def __str__(self) -> str:
         return f"<LibcSearch {tuple(zip(self._sym, self._addr))}>"
 
@@ -194,7 +236,4 @@ if __name__ == "__main__":
     sym = ["puts", "binsh", "gets"]
     addr = ["0x7f10101010"]
     libcsrch = LibcSearch(sym, addr)
-    print(libcsrch)
-    print(libcsrch.libc_list)
-    for libc in libcsrch.libc_list:
-        print(libc)
+    print(libcsrch.download())
