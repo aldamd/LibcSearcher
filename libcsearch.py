@@ -184,6 +184,19 @@ class LibcSearch:
         self._libc_map = filtered_map
 
     def download(self) -> list[str]:
+        logging.info("Initiating download redundancy check")
+        libcs = glob("*.so")
+        leave = True
+        for libc in self._libc_map:
+            if libc not in libcs:
+                logging.info(
+                    f"{libc} missing from shared objects in pwd, beginning download"
+                )
+                leave = False
+                break
+        if leave:
+            return list(self._libc_map)
+
         if self._url == "https://libc.blukat.me/":
             query = "/d/"
         elif self._url == "https://libc.rip/":
@@ -237,3 +250,5 @@ if __name__ == "__main__":
     addr = ["0x7f10101010"]
     libcsrch = LibcSearch(sym, addr)
     print(libcsrch.download())
+
+# TODO cache current symbols to prevent redundant search
