@@ -50,8 +50,32 @@ class LibcSearch:
         self.libc_list: list[LibcSearch._Libc] = []
         self._url: str = ""
 
+        self._cache_flag: bool = False
+        self._check_cache()
+        if self._cache_flag:
+            return
+
         self._check_libc_db()
         self._search()
+        self._cache()
+
+    def _check_cache(self) -> None:
+        if not glob("libc.cache"):
+            logger.info("No cache file found")
+            return
+
+        with open("libc.cache") as f:
+            cache = json.load(f)
+        if self._sym == cache["args"]["sym"] and self._addr == cache["args"]["addr"]:
+            self._cache_flag = True
+            logger.info("Valid cache file found, skipping web requests")
+        else:
+            logger.info("Invalid cache file found")
+            return
+
+        self._libc_map = cache["libc_map"]
+        for libc, offsets in self._libc_map.items():
+            self.libc_list.append(self._Libc(libc, offsets))
 
     def _check_libc_db(self) -> None:
         for url in ["https://libc.blukat.me/", "https://libc.rip/"]:
@@ -183,6 +207,13 @@ class LibcSearch:
 
         self._libc_map = filtered_map
 
+    def _cache(self) -> None:
+        cache = {}
+        cache["args"] = {"sym": self._sym, "addr": self._addr}
+        cache["libc_map"] = self._libc_map
+        with open("libc.cache", "w") as f:
+            json.dump(cache, f)
+
     def download(self) -> list[str]:
         logging.info("Initiating download redundancy check")
         libcs = glob("*.so")
@@ -196,6 +227,9 @@ class LibcSearch:
                 break
         if leave:
             return list(self._libc_map)
+
+        if not self._url:
+            self._check_libc_db()
 
         if self._url == "https://libc.blukat.me/":
             query = "/d/"
@@ -249,6 +283,8 @@ if __name__ == "__main__":
     sym = ["puts", "binsh", "gets"]
     addr = ["0x7f10101010"]
     libcsrch = LibcSearch(sym, addr)
-    print(libcsrch.download())
+    print(libcsrch)
+    for libc in libcsrch.libc_list:
+        print(libc)
 
 # TODO cache current symbols to prevent redundant search
