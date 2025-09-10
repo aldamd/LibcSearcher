@@ -49,6 +49,9 @@ class LibcSearch:
 
         self._check_libc_db()
 
+        self._url = "https://libc.rip/"
+        self._rip_search()
+
     def _check_libc_db(self) -> None:
         for url in ["https://libc.blukat.me/", "https://libc.rip/"]:
             r = requests.head(url, timeout=2)
@@ -78,6 +81,58 @@ class LibcSearch:
             r = requests.get(self._url + query)
             if r.status_code != 200:
                 raise RuntimeError(f"Failed to reach {self._url + query}")
+            symbols = r.text
+
+            offset_map = {}
+            for s in self._sym:
+                pattern = rf"(?:{s} [0-9a-f]+)"
+                match = re.search(pattern, symbols)
+                if not match:
+                    raise RuntimeError(f"Failed to find {s} in the {libc} symbol table")
+                offset_map[s] = int(match.group().split()[-1], 16)
+
+            return libc, offset_map
+
+        libc_map = {}
+        with ThreadPoolExecutor(max_workers=10) as tp:
+            futures = [tp.submit(search_symbols, libc) for libc in matches]
+            for future in as_completed(futures):
+                libc, offsets = future.result()
+                libc_map[libc] = offsets
+
+                with lock:
+                    done += 1
+                    logging.info(
+                        "Scraped %s (%d/%d, %.1f%%)",
+                        libc,
+                        done,
+                        total,
+                        (done / total) * 100,
+                    )
+
+        self._libc_map = libc_map
+
+    def _rip_search(self) -> None:
+        query = "api/find"
+        params = {}
+        for s, a in zip(self._sym, self._addr):
+            params[s] = a
+        data = {"symbols": params}
+        headers = {"Content-Type": "application/json"}
+        r = requests.post(self._url + query, headers=headers, data=json.dumps(data))
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to retrieve {self._url + query}")
+
+        matches = [i["symbols_url"] for i in r.json()]
+        total = len(matches)
+        done = 0
+        lock = Lock()
+
+        def search_symbols(url: str) -> tuple[str, dict[str, int]]:
+            libc = url.split("/")[-1].split(".symbols")[0]
+            r = requests.get(url)
+            if r.status_code != 200:
+                raise RuntimeError(f"Failed to retrieve {url}")
             symbols = r.text
 
             offset_map = {}
