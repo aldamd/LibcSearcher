@@ -78,7 +78,7 @@ class LibcSearch:
             self.libc_list.append(self._Libc(libc, offsets))
 
     def _check_libc_db(self) -> None:
-        for url in ["https://libc.blukat.me/", "https://libc.rip/"]:
+        for url in ["https://libc.rip/", "https://libc.blukat.me/"]:
             r = requests.head(url, timeout=2)
             if r.status_code == 200:
                 self._url = url
@@ -143,8 +143,7 @@ class LibcSearch:
         for s, a in zip(self._sym, self._addr):
             params[s] = a
         data = {"symbols": params}
-        headers = {"Content-Type": "application/json"}
-        r = requests.post(self._url + query, headers=headers, data=json.dumps(data))
+        r = requests.post(self._url + query, json=data)
         if r.status_code != 200:
             raise RuntimeError(f"Failed to retrieve {self._url + query}")
 
@@ -198,7 +197,7 @@ class LibcSearch:
         filtered_map = {}
         seen = set()
         for libc, offsets in self._libc_map.items():
-            id_tuple = (libc, tuple(offsets.items()))
+            id_tuple = tuple(offsets.items())
             if id_tuple in seen:
                 continue
             seen.add(id_tuple)
