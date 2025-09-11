@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 
 logger = logging.getLogger(__name__)
-aliases = {"binsh": "str_bin_sh"}
+aliases = {"binsh": "str_bin_sh", "bin_sh": "str_bin_sh"}
 
 
 class LibcSearch:
@@ -64,8 +64,13 @@ class LibcSearch:
             logger.info("No cache file found")
             return
 
-        with open("libc.cache") as f:
-            cache = json.load(f)
+        try:
+            with open("libc.cache") as f:
+                cache = json.load(f)
+        except json.JSONDecodeError:
+            logger.info("Failed to json decode libc.cache")
+            return
+
         if self._sym == cache["args"]["sym"] and self._addr == cache["args"]["addr"]:
             self._cache_flag = True
             logger.info("Valid cache file found, skipping web requests")
