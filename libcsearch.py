@@ -285,5 +285,3 @@ if __name__ == "__main__":
     print(libcsrch)
     for libc in libcsrch.libc_list:
         print(libc)
-
-# TODO cache current symbols to prevent redundant search
